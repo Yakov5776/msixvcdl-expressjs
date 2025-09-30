@@ -1,0 +1,4 @@
+node_modules/
+token.json
+.env
+.DS_Store
