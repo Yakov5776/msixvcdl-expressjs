@@ -1,4 +1,5 @@
 node_modules/
 token.json
+cache.db
 .env
 .DS_Store

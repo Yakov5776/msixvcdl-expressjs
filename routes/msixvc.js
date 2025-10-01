@@ -2,6 +2,7 @@ const express = require("express");
 const authService = require("../auth/authService");
 const tokenService = require("../auth/tokenService");
 const packageService = require("../services/packageService");
+const cacheService = require("../services/cacheService");
 
 const router = express.Router();
 
@@ -110,10 +111,59 @@ router.get("/:identifier", async (req, res) => {
       tokenService.saveTokens(tokens);
     }
 
-    // Fetch package information
-    const files = await packageService.fetchPackageInfo(contentId, xsts);
-    if (!files) {
-      return res.status(404).json({ error: "Package not found" });
+    let files, metadata;
+    
+    // Check cache first if using product ID
+    if (isProductId && req.productsData?.Products?.[0]?.LastModifiedDate) {
+      const lastModifiedDate = req.productsData.Products[0].LastModifiedDate;
+      
+      try {
+        const cachedData = await cacheService.getCachedPackageData(identifier, lastModifiedDate);
+        
+        if (cachedData) {
+          // Use cached data
+          console.log(`Using cached data for product ID: ${identifier}`);
+          files = cachedData.files;
+          // Always extract fresh metadata since we already have the products data
+          metadata = packageService.extractMetadataFromProducts(req.productsData);
+        } else {
+          // Cache miss or expired - fetch fresh data
+          console.log(`Cache miss for product ID: ${identifier}, fetching fresh data`);
+          files = await packageService.fetchPackageInfo(contentId, xsts);
+          if (!files) {
+            return res.status(404).json({ error: "Package not found" });
+          }
+          
+          // Extract metadata
+          metadata = packageService.extractMetadataFromProducts(req.productsData);
+          
+          // Cache only the files (expensive part)
+          try {
+            await cacheService.cachePackageData(identifier, contentId, lastModifiedDate, files);
+          } catch (cacheErr) {
+            console.error('Failed to cache data:', cacheErr);
+            // Continue anyway - caching failure shouldn't break the request
+          }
+        }
+      } catch (cacheErr) {
+        console.error('Cache error, falling back to direct fetch:', cacheErr);
+        // Fall back to direct fetch if cache fails
+        files = await packageService.fetchPackageInfo(contentId, xsts);
+        if (!files) {
+          return res.status(404).json({ error: "Package not found" });
+        }
+        metadata = packageService.extractMetadataFromProducts(req.productsData);
+      }
+    } else {
+      // Direct content ID request or no lastModifiedDate - no caching
+      files = await packageService.fetchPackageInfo(contentId, xsts);
+      if (!files) {
+        return res.status(404).json({ error: "Package not found" });
+      }
+      
+      if (isProductId) {
+        metadata = packageService.extractMetadataFromProducts(req.productsData);
+      }
     }
 
     // Prepare response object
@@ -121,8 +171,6 @@ router.get("/:identifier", async (req, res) => {
     
     if (isProductId) {
       response.productId = identifier;
-      
-      const metadata = packageService.extractMetadataFromProducts(req.productsData);
       if (metadata) {
         response.metadata = metadata;
       }
