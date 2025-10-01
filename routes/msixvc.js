@@ -38,14 +38,56 @@ router.get("/callback", async (req, res) => {
 });
 
 /**
- * Fetch package information for a given content ID
+ * Fetch package information for a given content ID or product ID
  */
-router.get("/:contentId", async (req, res) => {
-  const contentId = req.params.contentId;
+router.get("/:identifier", async (req, res) => {
+  const identifier = req.params.identifier;
+  let contentId = identifier;
+  let isProductId = false;
   
-  // Validate content ID format
-  if (!packageService.isValidContentId(contentId)) {
-    return res.status(400).json({ error: "Invalid contentId format" });
+  // Check if the identifier is a content ID or product ID
+  if (packageService.isValidContentId(identifier)) {
+    // It's a content ID, use it directly
+    contentId = identifier;
+  } else if (packageService.isValidProductId(identifier)) {
+    // It's a product ID, convert it to content ID
+    isProductId = true;
+    try {
+      console.log(`Converting product ID ${identifier} to content ID...`);
+      
+      // Fetch products data first (can be used for metadata later)
+      const productsData = await packageService.fetchProductsData(identifier);
+      if (!productsData) {
+        return res.status(404).json({ 
+          error: "Could not fetch product data for the given product ID",
+          productId: identifier
+        });
+      }
+      
+      // Extract content ID from the products data
+      contentId = packageService.extractContentIdFromProducts(productsData);
+      if (!contentId) {
+        return res.status(404).json({ 
+          error: "Could not find content ID for the given product ID",
+          productId: identifier
+        });
+      }
+      
+      console.log(`Product ID ${identifier} converted to content ID: ${contentId}`);
+      
+      // Store products data for potential metadata use
+      req.productsData = productsData;
+    } catch (err) {
+      console.error("Error converting product ID to content ID:", err);
+      return res.status(500).json({ 
+        error: "Failed to convert product ID to content ID: " + err.message,
+        productId: identifier
+      });
+    }
+  } else {
+    return res.status(400).json({ 
+      error: "Invalid identifier format. Must be either a valid content ID (UUID) or product ID" 
+    });
   }
 
   try {
@@ -74,7 +116,21 @@ router.get("/:contentId", async (req, res) => {
       return res.status(404).json({ error: "Package not found" });
     }
 
-    res.json({ contentId, files });
+    // Prepare response object
+    const response = { contentId };
+    
+    if (isProductId) {
+      response.productId = identifier;
+      
+      const metadata = packageService.extractMetadataFromProducts(req.productsData);
+      if (metadata) {
+        response.metadata = metadata;
+      }
+    }
+    
+    response.files = files;
+    
+    res.json(response);
   } catch (err) {
     console.error("Failed to fetch package:", err);
     res.status(500).json({ error: "Failed to fetch package: " + err.message });

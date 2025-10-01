@@ -40,7 +40,7 @@ app.get("/", async (req, res) => {
     endpoints: {
       login: "/msixvc/login",
       callback: "/msixvc/callback",
-      download: "/msixvc/:contentId"
+      download: "/msixvc/:identifier (supports both contentId and productId)"
     }
   });
 });
