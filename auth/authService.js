@@ -3,41 +3,41 @@ const CONFIG = require("../config");
 
 /**
  * Generate Microsoft login URL for OAuth
+ * @param {string} responseType - Response type: "token" or "code"
  * @returns {string} Microsoft login URL
  */
-function getMicrosoftLoginUrl() {
+function getMicrosoftLoginUrl(responseType = "code") {
   const query = querystring.stringify({
     client_id: CONFIG.xboxLiveClientId,
-    response_type: "token",
+    response_type: responseType,
     redirect_uri: CONFIG.redirectUri,
     scope: CONFIG.authorizeScope,
   });
   return `${CONFIG.microsoftLoginUrl}?${query}`;
 }
 
-// We don't need this function since you can get access_token directly from URL fragment when doing response_type=token instead of response_type=code
-// /**
-//  * Exchange authorization code for access/refresh tokens
-//  * @param {string} code - Authorization code from Microsoft
-//  * @returns {Promise<Object>} Token data
-//  */
-// async function exchangeCodeForTokens(code) {
-//   const body = querystring.stringify({
-//     client_id: CONFIG.xboxLiveClientId,
-//     code,
-//     redirect_uri: CONFIG.redirectUri,
-//     grant_type: "authorization_code",
-//   });
+/**
+ * Exchange authorization code for access/refresh tokens
+ * @param {string} code - Authorization code from Microsoft
+ * @returns {Promise<Object>} Token data
+ */
+async function exchangeCodeForTokens(code) {
+  const body = querystring.stringify({
+    client_id: CONFIG.xboxLiveClientId,
+    code,
+    redirect_uri: CONFIG.redirectUri,
+    grant_type: "authorization_code",
+  });
 
-//   const response = await fetch(CONFIG.microsoftTokenUrl, {
-//     method: "POST",
-//     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-//     body,
-//   });
+  const response = await fetch(CONFIG.microsoftTokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
 
-//   if (!response.ok) throw new Error("Failed to exchange code for tokens");
-//   return response.json();
-// }
+  if (!response.ok) throw new Error("Failed to exchange code for tokens");
+  return response.json();
+}
 
 /**
  * XASU Authentication (user.auth.xboxlive.com)
@@ -94,6 +94,30 @@ async function authenticateXSTS(userToken) {
 }
 
 /**
+ * Refresh access token using refresh token
+ * @param {string} refreshToken - The refresh token
+ * @returns {Promise<Object>} New token data
+ */
+async function refreshAccessToken(refreshToken) {
+  const body = querystring.stringify({
+    client_id: CONFIG.xboxLiveClientId,
+    refresh_token: refreshToken,
+    grant_type: "refresh_token",
+    redirect_uri: CONFIG.redirectUri,
+    scope: CONFIG.authorizeScope,
+  });
+
+  const response = await fetch(CONFIG.microsoftTokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+
+  if (!response.ok) throw new Error("Failed to refresh access token");
+  return response.json();
+}
+
+/**
  * Complete Xbox Live authentication flow
  * @param {string} accessToken - Microsoft access token
  * @returns {Promise<{userToken: Object, xsts: Object}>} Authentication tokens
@@ -106,6 +130,8 @@ async function authenticateXboxLive(accessToken) {
 
 module.exports = {
   getMicrosoftLoginUrl,
+  exchangeCodeForTokens,
+  refreshAccessToken,
   authenticateXASU,
   authenticateXSTS,
   authenticateXboxLive,

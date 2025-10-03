@@ -18,7 +18,24 @@ router.get("/login", (req, res) => {
  * OAuth callback - handle authorization token and complete authentication
  */
 router.get("/callback", async (req, res) => {
-  const access_token = req.query.access_token;
+  const code = req.query.code;
+  let access_token;
+  let tokenData = null;
+  
+  if (code) {
+    try {
+      // Exchange code for tokens
+      tokenData = await authService.exchangeCodeForTokens(code);
+      access_token = tokenData.access_token;
+      console.log('Received tokens from authorization code exchange');
+    } catch (err) {
+      console.error("Error exchanging code for tokens:", err);
+      return res.status(500).send("Failed to exchange code for tokens: " + err.message);
+    }
+  } else {
+    access_token = req.query.access_token;
+  }
+  
   if (!access_token) {
     return res.status(400).send("Missing access_token in query");
   }
@@ -27,8 +44,22 @@ router.get("/callback", async (req, res) => {
     // Complete Xbox Live authentication
     const { userToken, xsts } = await authService.authenticateXboxLive(access_token);
 
-    // Save all authentication data
-    const fullState = { access_token, userToken, xsts };
+    // Save all authentication data including refresh token if available
+    const fullState = {
+      access_token,
+      userToken,
+      xsts,
+      // Include token data from authorization code exchange if available
+      ...(tokenData && {
+        refresh_token: tokenData.refresh_token,
+        expires_in: tokenData.expires_in,
+        token_type: tokenData.token_type,
+        scope: tokenData.scope,
+        user_id: tokenData.user_id,
+        foci: tokenData.foci
+      })
+    };
+    
     tokenService.saveTokens(fullState);
 
     res.send("Authentication successful! You can now call /msixvc/:contentId");
@@ -92,23 +123,30 @@ router.get("/:identifier", async (req, res) => {
   }
 
   try {
-    // Load existing tokens
-    let tokens = tokenService.loadTokens();
-    if (!tokens || !tokens.access_token) {
+    // Refresh tokens if needed (handles both access token and refresh token logic)
+    let tokens = await tokenService.refreshTokensIfNeeded();
+    if (!tokens) {
       return res.status(401).json({ 
-        error: "Not authenticated. Go to /msixvc/login first" 
+        error: "Not authenticated or token refresh failed. Go to /msixvc/login first" 
       });
     }
 
     // Check if we already have valid Xbox Live tokens, if not re-authenticate
     let xsts = tokens.xsts;
     if (!xsts || tokenService.needsXboxTokenRefresh(xsts)) {
-      console.log("Re-authenticating with Xbox Live...");
-      const authResult = await authService.authenticateXboxLive(tokens.access_token);
-      tokens.userToken = authResult.userToken;
-      tokens.xsts = authResult.xsts;
-      xsts = authResult.xsts;
-      tokenService.saveTokens(tokens);
+      console.log("Xbox Live tokens expired, re-authenticating...");
+      try {
+        const authResult = await authService.authenticateXboxLive(tokens.access_token);
+        tokens.userToken = authResult.userToken;
+        tokens.xsts = authResult.xsts;
+        xsts = authResult.xsts;
+        tokenService.saveTokens(tokens);
+      } catch (authError) {
+        console.error("Xbox Live re-authentication failed:", authError);
+        return res.status(401).json({ 
+          error: "Xbox Live authentication failed. Please re-authenticate at /msixvc/login" 
+        });
+      }
     }
 
     let files, metadata;

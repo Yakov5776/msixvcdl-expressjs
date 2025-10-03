@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const querystring = require("querystring");
+const authService = require("./authService");
 const CONFIG = require("../config");
 
 const tokenPath = path.join(process.cwd(), CONFIG.tokenFilename);
@@ -21,31 +21,12 @@ function loadTokens() {
  * @param {Object} data - Token data to save
  */
 function saveTokens(data) {
+  if (data.expires_in) {
+    data.expires_at = Date.now() + (data.expires_in * 1000);
+  }
   fs.writeFileSync(tokenPath, JSON.stringify(data, null, 2));
 }
 
-/**
- * Refresh access token using refresh token
- * @param {string} refreshToken - The refresh token
- * @returns {Promise<Object>} New token data
- */
-async function refreshAccessToken(refreshToken) {
-  const body = querystring.stringify({
-    client_id: CONFIG.xboxLiveClientId,
-    refresh_token: refreshToken,
-    grant_type: "refresh_token",
-    redirect_uri: CONFIG.redirectUri,
-  });
-
-  const response = await fetch(CONFIG.microsoftTokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
-
-  if (!response.ok) throw new Error("Failed to refresh access token");
-  return response.json();
-}
 
 /**
  * Check if access token needs refreshing
@@ -53,7 +34,13 @@ async function refreshAccessToken(refreshToken) {
  * @returns {boolean} True if token needs refreshing
  */
 function needsTokenRefresh(tokens) {
-  return !tokens.access_token || (tokens.expires_on && Date.now() / 1000 > tokens.expires_on);
+  if (!tokens.access_token) return true;
+  
+  if (tokens.expires_at && Date.now() >= tokens.expires_at) {
+    return true;
+  }
+  
+  return false;
 }
 
 /**
@@ -70,10 +57,55 @@ function needsXboxTokenRefresh(xstsToken) {
   return Date.now() >= (expiryDate.getTime() - bufferTime);
 }
 
+/**
+ * Refresh tokens and Xbox Live authentication if needed
+ * @returns {Promise<Object|null>} Refreshed token data or null if refresh failed
+ */
+async function refreshTokensIfNeeded() {
+  const tokens = loadTokens();
+  if (!tokens) {
+    console.log('No tokens found, authentication required');
+    return null;
+  }
+
+  // Check if access token needs refresh
+  if (needsTokenRefresh(tokens)) {
+    console.log('Access token expired, attempting refresh...');
+    
+    if (!tokens.refresh_token) {
+      console.log('No refresh token available, re-authentication required');
+      return null;
+    }
+
+    try {
+      // Refresh the access token
+      const newTokenData = await authService.refreshAccessToken(tokens.refresh_token);
+      
+      // Merge with existing data and preserve Xbox Live tokens temporarily
+      const updatedTokens = {
+        ...tokens,
+        ...newTokenData,
+        // Clear Xbox Live tokens since they're tied to the old access token
+        userToken: null,
+        xsts: null
+      };
+      
+      saveTokens(updatedTokens);
+      console.log('Access token refreshed successfully');
+      return updatedTokens;
+    } catch (error) {
+      console.error('Failed to refresh access token:', error);
+      return null;
+    }
+  }
+
+  return tokens;
+}
+
 module.exports = {
   loadTokens,
   saveTokens,
-  refreshAccessToken,
   needsTokenRefresh,
   needsXboxTokenRefresh,
+  refreshTokensIfNeeded,
 };
