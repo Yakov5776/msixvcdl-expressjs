@@ -2,6 +2,8 @@ const express = require("express");
 const fs = require("fs").promises;
 const path = require("path");
 const msixvcRoutes = require("./routes/msixvc");
+const authMiddleware = require("./middleware/authMiddleware");
+const CONFIG = require("./config");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -30,6 +32,10 @@ async function getLastCommitId() {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Apply authentication middleware
+app.use(authMiddleware.createAuthMiddleware());
+
 app.use("/msixvc", msixvcRoutes);
 
 app.get("/", async (req, res) => {
@@ -37,6 +43,7 @@ app.get("/", async (req, res) => {
   res.json({
     message: "MSIXVC Download Service",
     commitId : commitId || 'unknown',
+    publicMode: CONFIG.publicMode,
     endpoints: {
       login: "/msixvc/login",
       callback: "/msixvc/callback",
