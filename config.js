@@ -1,5 +1,3 @@
-require('dotenv').config({ quiet: true });
-
 const CONFIG = {
   tokenFilename: "token.json",
   xboxLiveClientId: "00000000402b5328",
@@ -15,7 +13,10 @@ const CONFIG = {
   
   // Application mode and authentication settings
   publicMode: process.env.PUBLIC_MODE !== 'false',
-  authPassword: process.env.AUTH_PASSWORD
+  authPassword: process.env.AUTH_PASSWORD,
+  
+  // Cache settings
+  cacheHistory: process.env.CACHE_HISTORY === 'true'
 };
 
 module.exports = CONFIG;

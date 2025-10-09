@@ -3,6 +3,7 @@ const authService = require("../auth/authService");
 const tokenService = require("../auth/tokenService");
 const packageService = require("../services/packageService");
 const cacheService = require("../services/cacheService");
+const CONFIG = require('../config');
 
 const router = express.Router();
 
@@ -66,6 +67,58 @@ router.get("/callback", async (req, res) => {
   } catch (err) {
     console.error("Authentication failed:", err);
     res.status(500).send("Authentication failed: " + err.message);
+  }
+});
+
+// History endpoint - returns recent cache entries for products when history is enabled
+router.get('/recents', async (req, res) => {
+  if (!CONFIG.cacheHistory) {
+    return res.status(403).json({ error: 'Cache history is disabled' });
+  }
+
+  const limitParam = req.query.limit;
+  let limit;
+
+  if (limitParam) {
+    const parsed = parseInt(limitParam, 10);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      return res.status(400).json({ error: 'Invalid limit parameter' });
+    } else if (parsed > 30) {
+      return res.status(400).json({ error: 'Limit parameter too large, max is 30' });
+    }
+    limit = parsed;
+  }
+
+  try {
+    const history = await cacheService.getCacheHistory(limit);
+    const includeRawFiles = req.query.includeRawFiles === 'true';
+    const sanitizedHistory = history.map(entry => {
+      let files;
+      try {
+        files = JSON.parse(entry.files_data);
+      } catch (e) {
+        files = entry.files_data;
+      }
+
+      if (!includeRawFiles && Array.isArray(files)) {
+        files = files.map(f => {
+          const { url, ...rest } = f;
+          return rest;
+        });
+      }
+
+      return {
+        product_id: entry.product_id,
+        last_modified_date: entry.last_modified_date,
+        files_data: JSON.stringify(files),
+        cached_at: entry.cached_at
+      };
+    });
+
+    res.json({ history: sanitizedHistory });
+  } catch (err) {
+    console.error('Error fetching cache history:', err);
+    res.status(500).json({ error: 'Failed to fetch cache history' });
   }
 });
 

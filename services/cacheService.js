@@ -1,5 +1,6 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const CONFIG = require('../config');
 
 class CacheService {
   constructor() {
@@ -22,7 +23,8 @@ class CacheService {
   createTables() {
     const createTableSQL = `
       CREATE TABLE IF NOT EXISTS package_cache (
-        product_id TEXT PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id TEXT NOT NULL,
         content_id TEXT NOT NULL,
         last_modified_date TEXT NOT NULL,
         files_data TEXT NOT NULL,
@@ -30,12 +32,25 @@ class CacheService {
       )
     `;
 
-    this.db.run(createTableSQL, (err) => {
-      if (err) {
-        console.error('Error creating cache table:', err);
-      } else {
-        console.log('Cache table ready');
-      }
+    const createIndexSQL = `
+      CREATE INDEX IF NOT EXISTS idx_product_cached 
+      ON package_cache(product_id, cached_at DESC)
+    `;
+
+    this.db.serialize(() => {
+      this.db.run(createTableSQL, (err) => {
+        if (err) {
+          console.error('Error creating cache table:', err);
+        } else {
+          console.log('Cache table ready');
+        }
+      });
+
+      this.db.run(createIndexSQL, (err) => {
+        if (err) {
+          console.error('Error creating cache index:', err);
+        }
+      });
     });
   }
 
@@ -47,10 +62,13 @@ class CacheService {
    */
   async getCachedPackageData(productId, lastModifiedDate) {
     return new Promise((resolve, reject) => {
+      // Get the most recent cache entry for this product
       const query = `
         SELECT content_id, files_data, last_modified_date
         FROM package_cache 
         WHERE product_id = ?
+        ORDER BY cached_at DESC
+        LIMIT 1
       `;
 
       this.db.get(query, [productId.toUpperCase()], (err, row) => {
@@ -94,26 +112,52 @@ class CacheService {
    */
   async cachePackageData(productId, contentId, lastModifiedDate, files) {
     return new Promise((resolve, reject) => {
+      const executeInsert = () => {
+        const insertQuery = `INSERT INTO package_cache (product_id, content_id, last_modified_date, files_data) VALUES (?, ?, ?, ?)`;
+        this.db.run(insertQuery, [productId.toUpperCase(), contentId, lastModifiedDate, JSON.stringify(files)], function(err) {
+          if (err) {
+            console.error('Error caching data:', err);
+            reject(err);
+            return;
+          }
+          console.log(`Cached data ${CONFIG.cacheHistory ? 'with history' : '(replaced)'} for product ID: ${productId}`);
+          resolve();
+        });
+      };
+
+      CONFIG.cacheHistory ? executeInsert() : this.db.run(`DELETE FROM package_cache WHERE product_id = ?`, [productId.toUpperCase()], (err) => {
+        if (err) {
+          console.error('Error clearing old cache:', err);
+          reject(err);
+          return;
+        }
+        executeInsert();
+      });
+    });
+  }
+
+  /**
+   * Get cache history for products (when history mode is enabled)
+   * @param {number} limit - Maximum number of entries to return (default: 10)
+   * @returns {Promise<Array>} Array of cache entries sorted by most recent first
+   */
+  async getCacheHistory(limit = 10) {
+    return new Promise((resolve, reject) => {
       const query = `
-        INSERT OR REPLACE INTO package_cache 
-        (product_id, content_id, last_modified_date, files_data)
-        VALUES (?, ?, ?, ?)
+        SELECT product_id, last_modified_date, files_data, cached_at
+        FROM package_cache 
+        ORDER BY cached_at DESC
+        LIMIT ?
       `;
 
-      this.db.run(query, [
-        productId.toUpperCase(),
-        contentId,
-        lastModifiedDate,
-        JSON.stringify(files)
-      ], function(err) {
+      this.db.all(query, [limit], (err, rows) => {
         if (err) {
-          console.error('Error caching data:', err);
+          console.error('Error getting cache history:', err);
           reject(err);
           return;
         }
 
-        console.log(`Cached data for product ID: ${productId}`);
-        resolve();
+        resolve(rows || []);
       });
     });
   }
