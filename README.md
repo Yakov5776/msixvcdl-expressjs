@@ -4,12 +4,13 @@ An nodejs/expressjs service that downloads (MSI)XVC packages from Xbox Live serv
 
 ### Things it does:
 
-- OAuth authentication with Microsoft/Xbox Live
+- OAuth authentication with Microsoft/Xbox Live using XASU/XSTS
 - Fetch package information and download URLs for MSIXVC packages
+- Public / Private server mode (toggle `PUBLIC_MODE`); when private require `Authorization: Bearer <AUTH_PASSWORD>` header
 - Automatic token management with refresh token support
 - SQLite-based caching system for improved performance
 - Product metadata extraction from Microsoft Display Catalog
-- Support for both Product IDs and Content IDs
+- Support for both Product IDs and Content IDs (ProductId preferred for caching)
 
 ### The Usage:
 
