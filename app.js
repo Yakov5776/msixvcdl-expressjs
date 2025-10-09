@@ -1,5 +1,6 @@
 require('dotenv').config({ quiet: true });
 const express = require("express");
+const cors = require('cors');
 const fs = require("fs").promises;
 const path = require("path");
 const msixvcRoutes = require("./routes/msixvc");
@@ -33,6 +34,18 @@ async function getLastCommitId() {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Configure CORS behavior: use whitelist if defined, if not defined, then only allow all if public mode, or disable otherwise
+if (CONFIG.corsWhitelist) {
+  const corsOptions = {
+    origin: function (origin, callback) {
+      const allowed = !origin || CONFIG.corsWhitelist.indexOf(origin) !== -1;
+      return callback(null, allowed);
+    },
+    optionsSuccessStatus: 204
+  };
+  app.use(cors(corsOptions));
+} else if (CONFIG.publicMode) app.use(cors());
 
 // Apply authentication middleware
 app.use(authMiddleware.createAuthMiddleware());

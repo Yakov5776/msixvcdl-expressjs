@@ -14,6 +14,7 @@ const CONFIG = {
   // Application mode and authentication settings
   publicMode: process.env.PUBLIC_MODE !== 'false',
   authPassword: process.env.AUTH_PASSWORD,
+  corsWhitelist: process.env.CORS_WHITELIST ? process.env.CORS_WHITELIST.split(',').map(s => s.trim()) : null,
   
   // Cache settings
   cacheHistory: process.env.CACHE_HISTORY === 'true'
