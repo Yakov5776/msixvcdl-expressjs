@@ -47,6 +47,9 @@ if (CONFIG.corsWhitelist) {
   app.use(cors(corsOptions));
 } else if (CONFIG.publicMode) app.use(cors());
 
+if (!CONFIG.debugMode)
+  app.disable('x-powered-by');
+
 // Apply authentication middleware
 app.use(authMiddleware.createAuthMiddleware());
 

@@ -184,8 +184,11 @@ router.get("/:identifier", async (req, res) => {
       });
     }
 
+    const accessTokenRefreshed = tokens.refreshed === true;
+
     // Check if we already have valid Xbox Live tokens, if not re-authenticate
     let xsts = tokens.xsts;
+    let xstsRefreshed = false;
     if (!xsts || tokenService.needsXboxTokenRefresh(xsts)) {
       console.log("Xbox Live tokens expired, re-authenticating...");
       try {
@@ -193,6 +196,7 @@ router.get("/:identifier", async (req, res) => {
         tokens.userToken = authResult.userToken;
         tokens.xsts = authResult.xsts;
         xsts = authResult.xsts;
+        xstsRefreshed = true;
         tokenService.saveTokens(tokens);
       } catch (authError) {
         console.error("Xbox Live re-authentication failed:", authError);
@@ -203,6 +207,7 @@ router.get("/:identifier", async (req, res) => {
     }
 
     let files, metadata;
+    let usingCachedData = false;
     
     // Check cache first if using product ID
     if (isProductId && req.productsData?.Products?.[0]?.LastModifiedDate) {
@@ -214,6 +219,7 @@ router.get("/:identifier", async (req, res) => {
         if (cachedData) {
           // Use cached data
           console.log(`Using cached data for product ID: ${identifier}`);
+          usingCachedData = true;
           files = cachedData.files;
           // Always extract fresh metadata since we already have the products data
           metadata = packageService.extractMetadataFromProducts(req.productsData);
@@ -265,6 +271,14 @@ router.get("/:identifier", async (req, res) => {
       if (metadata) {
         response.metadata = metadata;
       }
+    }
+
+    if (CONFIG.debugMode) {
+      response.debugInfo = {
+        usingCachedData,
+        accessTokenRefreshed,
+        xstsRefreshed
+      };
     }
     
     response.files = files;

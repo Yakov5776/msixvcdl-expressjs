@@ -15,6 +15,7 @@ const CONFIG = {
   publicMode: process.env.PUBLIC_MODE !== 'false',
   authPassword: process.env.AUTH_PASSWORD,
   corsWhitelist: process.env.CORS_WHITELIST ? process.env.CORS_WHITELIST.split(',').map(s => s.trim()) : null,
+  debugMode: process.env.DEBUG_MODE === 'true',
   
   // Cache settings
   cacheHistory: process.env.CACHE_HISTORY === 'true'

@@ -92,7 +92,7 @@ async function refreshTokensIfNeeded() {
       
       saveTokens(updatedTokens);
       console.log('Access token refreshed successfully');
-      return updatedTokens;
+      return { ...updatedTokens, refreshed: true };
     } catch (error) {
       console.error('Failed to refresh access token:', error);
       return null;
