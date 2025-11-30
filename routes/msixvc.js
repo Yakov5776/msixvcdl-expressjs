@@ -185,6 +185,9 @@ router.get("/:identifier", async (req, res) => {
     }
 
     const accessTokenRefreshed = tokens.refreshed === true;
+    if (tokens.refreshed !== undefined) {
+      delete tokens.refreshed; // prevent persisting this flag
+    }
 
     // Check if we already have valid Xbox Live tokens, if not re-authenticate
     let xsts = tokens.xsts;
